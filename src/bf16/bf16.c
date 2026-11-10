@@ -132,6 +132,72 @@ uint16_t bf16_mul(uint16_t a, uint16_t b)
 
 uint16_t bf16_sqrt(uint16_t a)
 {
-    (void) a;
-    return 0;
+    // 取得 Sign、Exponent、Fraction
+    uint32_t sign = a & 0x8000;
+    uint32_t exp = (a >> 7) & 0xFF;
+    uint32_t frac = a & 0x7F;
+
+    // 處理 NaN 和 Infinity
+    if (exp == 255) {
+        if (frac != 0) {
+            return a;  // NaN：原樣回傳
+        }
+
+        if (sign != 0) {
+            return 0x7FC0;  // -Inf：回傳 NaN
+        }
+
+        return a;  // +Inf
+    }
+
+    // +0 或 -0，一律回傳 +0
+    if ((a & 0x7FFF) == 0) {
+        return 0x0000;
+    }
+
+    // 負的非零數，回傳 NaN
+    if (sign != 0) {
+        return 0x7FC0;
+    }
+
+    // 正的 Denormal，依作業簡化規則回傳 +0
+    if (exp == 0) {
+        return 0x0000;
+    }
+
+    // 還原有效數字
+    uint32_t m = 0x80 | frac;
+
+    // 取得真正指數
+    int32_t e = (int32_t) exp - 127;
+
+    // 如果真正指數為奇數
+    if ((e & 1) != 0) {
+        m <<= 1;
+        e--;
+    }
+
+    // 因為 e 已經是偶數，可以精確除以 2
+    int32_t result_exp = (e >> 1) + 127;
+
+
+    // Binary Search
+    uint32_t low = 90;
+    uint32_t high = 256;
+    uint32_t best = 90;
+
+    while (low <= high) {
+        uint32_t mid = (low + high) >> 1;
+
+        if (((mid * mid) >> 7) <= m) {
+            best = mid;
+            low = mid + 1;
+        } else {
+            high = mid - 1;
+        }
+    }
+
+    // 重新組合 BF16 sign bit必為0
+    // 不需要特別合併（複數的前面已經被return為NaN了)
+    return (uint16_t) ((result_exp << 7) | (best & 0x7F));
 }
